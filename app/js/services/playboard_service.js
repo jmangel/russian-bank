@@ -70,6 +70,11 @@ export function makeMove(game, move, isAllowedMove) {
         && move.getTargetPilePosition() == PileUtils.getReservePilePositionOfPlayer(move.getPlayer())) {
         isNullMove = true;
     }
+    // Move from own waste pile to own waste pile (player lifted the top card and dropped it back to cancel):
+    else if(move.getSourcePilePosition() == PileUtils.getWastePilePositionOfPlayer(move.getPlayer())
+        && move.getTargetPilePosition() == PileUtils.getWastePilePositionOfPlayer(move.getPlayer())) {
+        isNullMove = true;
+    }
 
     if(isAllowedMove && !isNullMove) {
         addMoveToMoveHistory(playboard, move);
