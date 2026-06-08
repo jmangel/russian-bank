@@ -16,6 +16,7 @@ import * as RenderService from "./services/render_service";
 import * as AiService from "./services/ai_service";
 import * as TutorialService from "./services/tutorial_service";
 import * as LocalStorageService from "./services/localstorage_service";
+import * as GamePersistence from "./services/game_persistence_service";
 
 export class Game {
 	
@@ -67,16 +68,26 @@ export class Game {
 		// Game should be treated as started only after the real player made his first move:
 		LocalStorageService.setGameStarted(0);
 
+		this.finishSetup();
+	}
+
+	/**
+	 * Wire up rendering and event handlers for the current playboard. Shared by
+	 * a freshly dealt game (initializeGame) and a game restored from localStorage
+	 * (GamePersistence.restoreInto), so a restore runs the identical setup without
+	 * re-dealing.
+	 */
+	finishSetup() {
 		RenderService.enableLevelSelect();
 		RenderService.enableSortAcesOnCenterPilesChoice();
 		RenderService.setGameEventHandlers(this);
 		RenderService.renderPlayboard(this);
-		
+
 		if (this.isInTutorialMode()) {
 			this.showBestMoveForTutorialMode();
 		}
 	}
-	
+
 	isInTutorialMode() {
 		return this._isTutorialMode;
 	}
@@ -253,6 +264,11 @@ export class Game {
 			else {
 				// If the active player changed and opponent is the AI:
 				if (!(intendedMove.getPlayer() == this.getActivePlayer())) {
+					// The human just ended their turn. Persist this committed board
+					// (activePlayer is now the AI) before the AI animates, so an
+					// accidental refresh keeps the whole human turn; the AI's
+					// not-yet-shown response is replayed fresh on restore.
+					GamePersistence.saveGame(this);
 					this.letArtificialIntelligencePlay();
 				}
 				else {
@@ -615,9 +631,15 @@ export class Game {
 				RenderService.enableLevelSelect();
 				RenderService.enableSortAcesOnCenterPilesChoice();
 			}
+
+			// The match is finished: discard the saved game so the next load
+			// starts fresh rather than restoring a completed board.
+			if (this.isGameOver()) {
+				GamePersistence.clearSavedGame();
+			}
 		}
 	}
-	
+
 	hideKnockButton() {
 		RenderService.hideKnockButton();
 	}
