@@ -994,6 +994,10 @@ export function disableLevelSelect() {
     $("select[name='selectDifficultyOfGame']").attr('disabled', true);
 }
 
+export function setLevelSelectValue(level) {
+    $("#selectDifficultyOfGame").val(level);
+}
+
 export function enableSortAcesOnCenterPilesChoice() {
     $("input[id='checkboxOrderAcesOnCenterPiles']").attr('disabled', false);
 }

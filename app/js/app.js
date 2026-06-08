@@ -14,10 +14,18 @@ RenderService.setupApp();
 const game = new Game();
 
 // Restore an in-progress game saved before an accidental refresh, otherwise deal
-// a fresh board.
-const savedGame = GamePersistence.loadSavedGame();
+// a fresh board. A save that passes structural validation but is still corrupt
+// (e.g. an unknown enum name) makes restoreInto throw; fall back to a fresh deal
+// rather than letting boot die.
+let savedGame = GamePersistence.loadSavedGame();
 if (savedGame) {
-	GamePersistence.restoreInto(game, savedGame);
+	try {
+		GamePersistence.restoreInto(game, savedGame);
+	} catch (e) {
+		GamePersistence.clearSavedGame();
+		savedGame = null;
+		game.initializeGame();
+	}
 } else {
 	game.initializeGame();
 }
@@ -25,7 +33,12 @@ if (savedGame) {
 RenderService.setupLocalStorageFields(game);
 
 // setupLocalStorageFields re-applies zpLevel/tutorial; re-assert the restored
-// game's state (and resume the AI if it was its turn) afterwards.
+// game's state (and resume the AI if it was its turn) afterwards. The selectors
+// are already locked by finishSetup when play had started; sync the level
+// dropdown's displayed value to the restored game's level.
 if (savedGame) {
 	GamePersistence.applyPostSetup(game, savedGame);
+	if (savedGame.scalars.realPlayerMadeFirstMove) {
+		RenderService.setLevelSelectValue(savedGame.scalars.levelOfDifficulty);
+	}
 }

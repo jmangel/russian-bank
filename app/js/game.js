@@ -77,9 +77,17 @@ export class Game {
 	 * (GamePersistence.restoreInto), so a restore runs the identical setup without
 	 * re-dealing.
 	 */
-	finishSetup() {
-		RenderService.enableLevelSelect();
-		RenderService.enableSortAcesOnCenterPilesChoice();
+	finishSetup(enableSelects = true) {
+		// A freshly dealt game enables the difficulty/sort selectors; a restored
+		// mid-game (play already started) keeps them locked, avoiding an
+		// enable-then-disable oscillation on boot.
+		if (enableSelects) {
+			RenderService.enableLevelSelect();
+			RenderService.enableSortAcesOnCenterPilesChoice();
+		} else {
+			RenderService.disableLevelSelect();
+			RenderService.disableSortAcesOnCenterPilesChoice();
+		}
 		RenderService.setGameEventHandlers(this);
 		RenderService.renderPlayboard(this);
 
@@ -327,13 +335,17 @@ export class Game {
 		}
 		else {
 			this.setIsExpectedToPlayReservePileCard(true);
+			// Re-save now that the reserve-card obligation is set: the render above
+			// persisted the flip with the flag still false, which would lose the
+			// obligation on restore.
+			GamePersistence.saveGameIfRestable(this);
 		}
-		
+
 		if (this.isInTutorialMode()) {
 			this.showBestMoveForTutorialMode();
 		}
 	}
-	
+
 	onClickChangeWastePileAndReservePileIcon() {
 		const intendedMove = new Move();
 		intendedMove.setPlayer(this.getIdentityPlayer());
@@ -501,6 +513,10 @@ export class Game {
 		}
 		
 		if (!(this.getIdentityPlayer() == this.getActivePlayer())) {
+			// No persistence save here on purpose: this hands control to the AI
+			// either mid-multi-move turn (re-run fresh from the last clean save on
+			// restore) or out of a resolved knock (the accepted knock-prompt gap).
+			// Only the human turn-ending handoff in onDropCardOnPile is persisted.
 			this.letArtificialIntelligencePlay();
 		}
 		else {
@@ -508,11 +524,27 @@ export class Game {
 			RenderService.renderPlayboard(this);
 		}
 	}
-	
+
 	getIdentityPlayer() {
 		return this._identityPlayer;
 	}
-	
+
+	setIdentityPlayer(identityPlayer) {
+		this._identityPlayer = identityPlayer;
+	}
+
+	getStartTime() {
+		return this._startTimeTs;
+	}
+
+	setCounterNumberOfWrongKnocks(counter) {
+		this._counterNumberOfWrongKnocks = counter;
+	}
+
+	setCounterNumbersOfTurnsToMiss(counter) {
+		this._counterNumbersOfTurnsToMiss = counter;
+	}
+
 	getLevelOfDifficulty() {
 		return this._levelOfDifficulty;
 	}
