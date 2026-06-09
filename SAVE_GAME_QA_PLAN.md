@@ -122,3 +122,22 @@ refresh, and symmetrically a wrong player-knock penalty could be dodged.
 | **D6** non-finite `rngState` → discarded | ✅ PASS | `Number.isFinite` gate → fresh deal |
 
 > **QA caught a real bug the review missed:** re-presenting `AI_KNOCKED_YOU` initially recomputed the forgotten-mandatory-moves highlight, which dereferenced a non-existent pile for the restored `DEALER` active player and threw → boot fell back to a fresh deal (the knock was *still* being undone). Fixed by persisting the forgotten moves in the prompt descriptor (commit "Fix knock re-presentation crash found in QA"). D2 then passed.
+
+---
+
+## Follow-up: Design B (resume the AI's turn mid-way)
+
+The board is now persisted at each AI decision point, so a refresh during the AI's
+turn resumes from the last committed sub-move instead of replaying the whole turn.
+
+| Test | Result | Evidence |
+|------|--------|----------|
+| **D7** mid-AI-turn save grows + reload resumes mid-turn | ✅ PASS | After a turn-ending move (handoff `history:1`), the saved blob's move history grows `1→2→3` while `activePlayer:PLAYER_B` (each AI sub-move now saves); reloading mid-turn restores `history:3, active:PLAYER_B` — resumed mid-turn, **not** replayed from the handoff and **not** a fresh deal. |
+| **D8** deterministic continuation from a fixed mid-turn save | ✅ PASS | Restoring the same stashed mid-turn save twice yields the identical next AI move (`HOUSE_PILE_LEFT_1->HOUSE_PILE_LEFT_4` both times) — the seeded continuation is reproducible. |
+
+> Residual (logged, accepted): the AI move that was *animating* at refresh time is
+> not committed until its animation ends, so it re-animates on restore and its
+> single knock window re-opens. All *already-committed* AI moves are settled and
+> cannot be re-knocked. Fully closing this would require not re-animating on restore
+> (jumping to the settled turn-end). Hardened: if a mid-turn save write fails, the
+> stale save is cleared so a refresh deals fresh rather than replaying a committed move.
