@@ -19,6 +19,7 @@ import "jquery-ui-touch-punch";
 import i18next from "i18next";
 import * as jokesService from "./jokes_service";
 import * as localStorageService from "./localstorage_service";
+import * as gamePersistenceService from "./game_persistence_service";
 import sweetAlert2 from "sweetalert2";
 
 import "tooltipster";
@@ -162,6 +163,10 @@ export function renderPlayboard(game) {
     renderKnockButton(game);
     renderPlayerBoards(game, activePlayerChanged);
     updateDragAndDropFunctionality(game);
+
+    // Persist the in-progress game at clean human resting points so an accidental
+    // refresh restores it (no-op during AI-turn / knock-prompt renders).
+    gamePersistenceService.saveGameIfRestable(game);
 }
 
 function renderPlayboardPiles() {
@@ -531,6 +536,10 @@ export function setGlobalEventHandlers() {
                 $("*").removeClass("disabledButton");
                 $("*").removeClass("centerPileForKnockProve");
                 $("*").removeClass("highlightBackground");
+
+                // Discard any saved game so the fresh deal is not overwritten by a
+                // restore on the next load.
+                gamePersistenceService.clearSavedGame();
 
                 // Initialize the new game... NOTE: the instance of the "old" game will be still existent,
                 // and the game event handlers will still react to events on the "old" instance of game if they are
@@ -983,6 +992,10 @@ export function enableLevelSelect() {
 
 export function disableLevelSelect() {
     $("select[name='selectDifficultyOfGame']").attr('disabled', true);
+}
+
+export function setLevelSelectValue(level) {
+    $("#selectDifficultyOfGame").val(level);
 }
 
 export function enableSortAcesOnCenterPilesChoice() {
