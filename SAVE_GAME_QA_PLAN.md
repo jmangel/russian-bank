@@ -103,3 +103,22 @@ Setup is deterministic: a fresh deal always has activePlayer `PLAYER_A`, one fac
 **Conclusion:** Persistence works end-to-end — a fresh deal is saved immediately, a reload restores the exact in-progress board (not a reshuffle), a turn-ending move is captured at the AI-handoff boundary and the AI resumes on restore, New game discards the save, and a corrupt/incompatible/unwritable save degrades gracefully to a fresh deal without ever crashing boot. All review-fix behaviors (corrupt-save fallback, reserve-flip obligation) are verified.
 
 > Test harness notes: assertions used a **local-only** build exposing `window.__rbGame`; the committed branch and deployed build contain no such hook (reverted + rebuilt clean, verified `grep -c __rbGame app/js/dist/app.js` = 0). The AI's animated turn does not complete under the headless/automation Chrome daemon — the same CSS-animation stall documented in the waste-pile `QA_PLAN.md`; it affects normal play identically, so it is out of scope for this feature.
+
+---
+
+## Follow-up: caveats #1 & #2 fixed (deterministic AI + knock persistence)
+
+Two refresh-as-undo holes were closed: (#2) the AI's turn re-rolled on a mid-turn
+refresh; (#1) an AI knock — and the mistake that triggered it — was undone by a
+refresh, and symmetrically a wrong player-knock penalty could be dodged.
+
+| Test | Result | Evidence |
+|------|--------|----------|
+| **D1** AI move is deterministic across reload (#2) | ✅ PASS | Turn-ending move → AI's first chosen move `M1`; after reload, read at +300ms `M2 === M1` (byte-identical). At +2.3s/+5.3s the move *drifts* — the AI turn slowly advances in the harness — which is why a naive late read looked nondeterministic; the **first** move replays identically. The exact boot order replayed in-page (`restoreInto → setupLocalStorageFields → applyPostSetup`) is deterministic (`match:true`); `setState`+N draws reproduce exactly. |
+| **D2** AI knock survives a refresh (#1, the reported bug) | ✅ PASS | On a knockable reserve flip: saved `{active:DEALER, pendingPrompt:AI_KNOCKED_YOU, history:1}`; after reload `restoredPrompt:AI_KNOCKED_YOU, history:1` (mistake **kept**, not rewound), `active:DEALER`, knock noty **re-presented**. |
+| **D3** wrong player-knock penalty persists (symmetric P1) | ✅ PASS | Crafted `YOU_KNOCKED_AI` save re-presents on reload: `active:PLAYER_B`, prove-class armed (`centerPileForKnockProve`), no crash/fresh-deal. (noty auto-times-out at 1.5s; the click-to-prove interaction is the persisted part.) |
+| **D4** v1 (old-schema) save discarded | ✅ PASS | reload → fresh **v2** deal, bad save replaced |
+| **D5** garbage `pendingPrompt.type` → fresh deal | ✅ PASS | `deserializePendingPrompt` throws → app.js catch → fresh deal; no stuck DEALER board |
+| **D6** non-finite `rngState` → discarded | ✅ PASS | `Number.isFinite` gate → fresh deal |
+
+> **QA caught a real bug the review missed:** re-presenting `AI_KNOCKED_YOU` initially recomputed the forgotten-mandatory-moves highlight, which dereferenced a non-existent pile for the restored `DEALER` active player and threw → boot fell back to a fresh deal (the knock was *still* being undone). Fixed by persisting the forgotten moves in the prompt descriptor (commit "Fix knock re-presentation crash found in QA"). D2 then passed.
