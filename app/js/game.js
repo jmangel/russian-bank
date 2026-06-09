@@ -684,7 +684,15 @@ export class Game {
 			// the RNG state is saved with it. This point is reached from the human
 			// handoff and after every committed AI sub-move (an animated move via
 			// makeMoveAfterMoveAnimation, a non-animated sub-move via recursion).
-			GamePersistence.saveGame(this);
+			// Not while a knock prompt is open (not a resumable AI-turn state). If
+			// the write fails, discard any stale earlier save so a refresh deals
+			// fresh rather than replaying an already-committed AI move (which would
+			// re-open its knock window).
+			if (!this.isInKnockedState()) {
+				if (!GamePersistence.saveGame(this)) {
+					GamePersistence.clearSavedGame();
+				}
+			}
 			AiService.letArtificialIntelligencePlay(this);
 		}
 	}

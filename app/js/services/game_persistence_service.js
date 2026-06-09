@@ -191,9 +191,11 @@ function serializeGame(game) {
 export function saveGame(game) {
 	try {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(serializeGame(game)));
+		return true;
 	} catch (e) {
 		// Saving must never break the render path / game loop
 		// (QuotaExceeded, disabled storage, private mode, ...).
+		return false;
 	}
 }
 
