@@ -268,15 +268,32 @@ if (restored) {
 - **AI resume on load** — re-run `letArtificialIntelligencePlay()` when the
   saved active player is the AI.
 
+## Evolution of the save model
+
+- **v1 (Option A+):** save at human resting points + the AI-handoff boundary; on
+  restore re-run the AI. Knock prompts were not persisted (a refresh rewound
+  them); the AI re-ran with `Math.random()` (a refresh could reroll it).
+- **v2 (caveats #1 & #2):** the AI's decisions are seeded (`utils/random.js`,
+  state persisted) so a re-run replays **identically** — no reroll. Knock prompts
+  are persisted (a `pendingPrompt` descriptor) and **re-presented** on restore so
+  a refresh can neither undo a knock nor dodge a wrong-knock penalty.
+- **Design B (mid-turn resume):** the board is persisted at **each AI decision
+  point** (start of `letArtificialIntelligencePlay`'s AI branch), so a refresh
+  during the AI's turn resumes from where it had got to instead of replaying the
+  whole turn. The continuation stays deterministic via the persisted RNG state.
+
 ## Non-goals / accepted limitations
 
-- A refresh during a **knock prompt** rewinds to just before the prompt.
-- The AI's not-yet-seen response is **re-randomized** on a mid-AI-turn refresh
-  (the AI uses `Math.random()` for knock/move decisions — `game.js:229,302,338`,
-  `ai_service.js:28,58`). Minor consequence: a player could refresh to "reroll"
-  an unfavorable pending AI knock. Acceptable for a local single-player game.
+- **In-flight-move re-knock (residual).** With Design B, a refresh during the AI's
+  turn settles all of the AI's *already-committed* moves (you cannot re-knock
+  those), but the move that was *animating* at refresh time is not committed until
+  its animation ends, so it re-animates on restore and its knock window re-opens.
+  Net: you can retry a knock only on that single in-flight move. Player-favorable
+  (a missed *opportunity*, not a penalty dodge); fully closing it would require
+  not re-animating on restore (jump to the settled turn-end). Accepted.
 - **Multi-tab** is not synchronized (last writer wins) — fine for a local
   single-player game.
+- A schema-version bump **discards in-progress saves** (fresh deal); no migration.
 
 ## Performance note
 

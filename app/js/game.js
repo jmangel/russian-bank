@@ -351,13 +351,11 @@ export class Game {
 			}
 			// No knocking, go on:
 			else {
-				// If the active player changed and opponent is the AI:
+				// If the active player changed and opponent is the AI, let the AI
+				// play. letArtificialIntelligencePlay persists the board at each of
+				// its decision points (starting with this handoff), so an accidental
+				// refresh resumes the AI's turn where it left off.
 				if (!(intendedMove.getPlayer() == this.getActivePlayer())) {
-					// The human just ended their turn. Persist this committed board
-					// (activePlayer is now the AI) before the AI animates, so an
-					// accidental refresh keeps the whole human turn; the AI's
-					// not-yet-shown response is replayed fresh on restore.
-					GamePersistence.saveGame(this);
 					this.letArtificialIntelligencePlay();
 				}
 				else {
@@ -680,6 +678,13 @@ export class Game {
 
 		RenderService.renderPlayboard(this);
 		if (!this.isGameOver() && PlayerUtils.getOpponentPlayer(this.getIdentityPlayer()) == this.getActivePlayer()) {
+			// Persist the committed board at each AI decision point, so an accidental
+			// refresh resumes the AI's turn from where it had got to rather than
+			// replaying it from the start. The continuation is deterministic because
+			// the RNG state is saved with it. This point is reached from the human
+			// handoff and after every committed AI sub-move (an animated move via
+			// makeMoveAfterMoveAnimation, a non-animated sub-move via recursion).
+			GamePersistence.saveGame(this);
 			AiService.letArtificialIntelligencePlay(this);
 		}
 	}
