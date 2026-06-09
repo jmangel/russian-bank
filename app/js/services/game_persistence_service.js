@@ -95,9 +95,17 @@ function serializePendingPrompt(prompt) {
 	};
 }
 
+// Must match the PROMPT_* constants in game.js.
+const KNOWN_PROMPT_TYPES = ["AI_KNOCKED_YOU", "YOU_KNOCKED_AI", "KNOCK_JUSTIFIED"];
+
 function deserializePendingPrompt(data) {
 	if (!data) {
 		return null;
+	}
+	if (KNOWN_PROMPT_TYPES.indexOf(data.type) === -1) {
+		// Corrupt/tampered save: fail loud so the app.js try/catch deals fresh,
+		// rather than leaving a knocked board with no presentable prompt.
+		throw new Error("Unknown pending-prompt type in saved game: " + data.type);
 	}
 	return {
 		type: data.type,
@@ -237,7 +245,7 @@ export function loadSavedGame() {
 		|| !Array.isArray(data.playboard.moveHistory)
 		|| typeof data.scalars.identityPlayer !== "string"
 		|| typeof data.scalars.activePlayer !== "string"
-		|| typeof data.scalars.rngState !== "number") {
+		|| !Number.isFinite(data.scalars.rngState)) {
 		clearSavedGame();
 		return null;
 	}

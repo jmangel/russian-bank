@@ -19,6 +19,14 @@ import * as LocalStorageService from "./services/localstorage_service";
 import * as GamePersistence from "./services/game_persistence_service";
 import * as Rng from "./utils/random";
 
+// Knock-prompt descriptor types, persisted so an open prompt is re-presented on
+// restore (a refresh must not undo a knock or dodge its penalty). The string
+// values are part of the saved-game schema — keep in sync with the validation
+// list in game_persistence_service.
+const PROMPT_AI_KNOCKED_YOU = "AI_KNOCKED_YOU";
+const PROMPT_YOU_KNOCKED_AI = "YOU_KNOCKED_AI";
+const PROMPT_KNOCK_JUSTIFIED = "KNOCK_JUSTIFIED";
+
 export class Game {
 	
 	initializeGame() {
@@ -191,21 +199,46 @@ export class Game {
 	}
 
 	/**
+	 * Record + persist an open "the AI knocked you" prompt so a refresh re-presents
+	 * it (the mistake and its penalty cannot be undone by reloading). Shared by the
+	 * three AI-knock entry points (drag, reserve flip, waste/reserve change).
+	 */
+	_openAiKnockPrompt(move, backwardMove) {
+		this.setPendingPrompt({type: PROMPT_AI_KNOCKED_YOU, move: move, backwardMove: backwardMove});
+		GamePersistence.saveGame(this);
+	}
+
+	/**
 	 * Re-show the knock prompt that was open when the game was saved, so an
-	 * accidental refresh cannot undo the knock (or the mistake that triggered it).
-	 * Called from GamePersistence.applyPostSetup on restore.
+	 * accidental refresh cannot undo a knock or dodge its penalty. Called from
+	 * GamePersistence.applyPostSetup on restore. Returns true if a prompt was
+	 * presented (so the caller skips the normal AI-resume path).
 	 */
 	rerenderPendingPrompt() {
 		const prompt = this.getPendingPrompt();
 		if (!prompt) {
-			return;
+			return false;
 		}
-		if (prompt.type === "AI_KNOCKED_YOU") {
+		if (prompt.type === PROMPT_AI_KNOCKED_YOU) {
 			const forgottenMandatoryMoves = PlayboardUtils.getForgottenMandatoryMovesToHightlight(this);
 			RenderService.renderNotyAiKnocked(this, prompt.backwardMove, forgottenMandatoryMoves, prompt.move);
-		} else if (prompt.type === "YOU_KNOCKED_AI") {
-			RenderService.renderNotyPlayerKnocked(this);
+			return true;
 		}
+		if (prompt.type === PROMPT_KNOCK_JUSTIFIED) {
+			RenderService.renderNotyKnockJustified(this, prompt.backwardMove);
+			return true;
+		}
+		if (prompt.type === PROMPT_YOU_KNOCKED_AI) {
+			// renderNotyPlayerKnocked dereferences the AI's intended move; if a
+			// corrupt save left it null, abandon the knock rather than crash.
+			if (!this.getIntendedMoveOfArtificialIntelligence()) {
+				this.setKnockedState(false);
+				return false;
+			}
+			RenderService.renderNotyPlayerKnocked(this);
+			return true;
+		}
+		return false;
 	}
 
 	isGameOver() {
@@ -306,10 +339,7 @@ export class Game {
 				this.setActivePlayer(Player.DEALER);
 				const backwardMove = MoveUtils.createBackwardMove(intendedMove, true);
 				RenderService.renderPlayboard(this); // Render playboard before calling renderNotyAiKnocks to avoid optical "jumps" of the card which has to be moved backwards.
-				// Persist the open knock prompt so a refresh re-presents it (the
-				// mistake and its penalty cannot be undone by reloading).
-				this.setPendingPrompt({type: "AI_KNOCKED_YOU", move: intendedMove, backwardMove: backwardMove});
-				GamePersistence.saveGame(this);
+				this._openAiKnockPrompt(intendedMove, backwardMove);
 				RenderService.renderNotyAiKnocked(this, backwardMove, forgottenMandatoryMoves, intendedMove);
 			}
 			// No knocking, go on:
@@ -375,8 +405,7 @@ export class Game {
 		if (isMoveKnockableByArtificialIntelligence && !forgetToKnock) {
 			this.setActivePlayer(Player.DEALER);
 			const backwardMove = MoveUtils.createBackwardMove(intendedMove, true);
-			this.setPendingPrompt({type: "AI_KNOCKED_YOU", move: intendedMove, backwardMove: backwardMove});
-			GamePersistence.saveGame(this);
+			this._openAiKnockPrompt(intendedMove, backwardMove);
 			RenderService.renderNotyAiKnocked(this, backwardMove, forgottenMandatoryMoves, intendedMove);
 		}
 		else {
@@ -424,8 +453,7 @@ export class Game {
 			backwardMove.setSourcePilePosition(PileUtils.getWastePilePositionOfPlayer(this.getIdentityPlayer()));
 			backwardMove.setTargetPilePosition(PileUtils.getWastePilePositionOfPlayer(this.getIdentityPlayer()));
 
-			this.setPendingPrompt({type: "AI_KNOCKED_YOU", move: intendedMove, backwardMove: backwardMove});
-			GamePersistence.saveGame(this);
+			this._openAiKnockPrompt(intendedMove, backwardMove);
 			RenderService.renderNotyAiKnocked(this, backwardMove, forgottenMandatoryMoves, intendedMove);
 		}
 		else {
@@ -443,7 +471,7 @@ export class Game {
 		// Persist the open "prove your knock" prompt so a refresh re-presents it
 		// rather than silently abandoning the knock (which would dodge the
 		// wrong-knock penalty).
-		this.setPendingPrompt({type: "YOU_KNOCKED_AI", move: null, backwardMove: null});
+		this.setPendingPrompt({type: PROMPT_YOU_KNOCKED_AI, move: null, backwardMove: null});
 		GamePersistence.saveGame(this);
 		RenderService.renderNotyPlayerKnocked(this);
 	}
@@ -496,6 +524,11 @@ export class Game {
 		if (knockIsJustified) {
 			this.setActivePlayer(Player.DEALER);
 			const backwardMove = MoveUtils.createBackwardMove(this.getIntendedMoveOfArtificialIntelligence(), true);
+			// The YOU_KNOCKED_AI prompt is consumed (the AI move was applied above).
+			// Persist the justified resolution so a refresh re-presents it (and does
+			// not re-run the AI move via the stale prompt).
+			this.setPendingPrompt({type: PROMPT_KNOCK_JUSTIFIED, move: null, backwardMove: backwardMove});
+			GamePersistence.saveGame(this);
 			RenderService.renderNotyKnockJustified(this, backwardMove);
 		}
 		else {
@@ -506,7 +539,16 @@ export class Game {
 				playerHasTooManyWrongKnocks = true;
 				this.incrementCounterNumbersOfTurnsToMiss();
 			}
-			
+
+			// Persist the committed wrong-knock penalty immediately (clearing the
+			// prompt) so a refresh during the "wrong knock" message cannot roll it
+			// back for a free retry. The resolved state resumes correctly on load
+			// (AI continues, or it is the player's turn).
+			this.setKnockedState(false);
+			if (!this.isGameOver()) {
+				GamePersistence.saveGame(this);
+			}
+
 			RenderService.renderNotyKnockNotJustified(this, playerHasTooManyWrongKnocks, playerPossiblyClickedTooLate);
 		}
 	}

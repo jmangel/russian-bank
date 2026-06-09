@@ -12,13 +12,19 @@
  * re-shuffled) and jokes are cosmetic.
  */
 
+// Process-scoped singleton: there is only ever one game at a time, mirroring the
+// other module-level services. (If a multi-game context is ever introduced, move
+// this state onto the Game instance.)
 let state = newSeed();
 
 function newSeed() {
 	return (Math.floor(Math.random() * 0x100000000)) >>> 0;
 }
 
-/** Reseed for a brand-new game. */
+/**
+ * Reseed for a brand-new game. Pass an explicit seedValue only in tests that
+ * need a reproducible sequence; production calls seed() with no argument.
+ */
 export function seed(seedValue) {
 	state = (seedValue === undefined ? newSeed() : seedValue) >>> 0;
 }

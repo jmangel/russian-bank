@@ -37,8 +37,15 @@ RenderService.setupLocalStorageFields(game);
 // are already locked by finishSetup when play had started; sync the level
 // dropdown's displayed value to the restored game's level.
 if (savedGame) {
-	GamePersistence.applyPostSetup(game, savedGame);
-	if (savedGame.scalars.realPlayerMadeFirstMove) {
-		RenderService.setLevelSelectValue(savedGame.scalars.levelOfDifficulty);
+	try {
+		GamePersistence.applyPostSetup(game, savedGame);
+		if (savedGame.scalars.realPlayerMadeFirstMove) {
+			RenderService.setLevelSelectValue(savedGame.scalars.levelOfDifficulty);
+		}
+	} catch (e) {
+		// A failure while re-presenting a knock prompt / resuming the AI must not
+		// brick boot: discard the save and deal a fresh, playable game.
+		GamePersistence.clearSavedGame();
+		game.initializeGame();
 	}
 }
