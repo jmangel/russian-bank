@@ -203,8 +203,16 @@ export class Game {
 	 * it (the mistake and its penalty cannot be undone by reloading). Shared by the
 	 * three AI-knock entry points (drag, reserve flip, waste/reserve change).
 	 */
-	_openAiKnockPrompt(move, backwardMove) {
-		this.setPendingPrompt({type: PROMPT_AI_KNOCKED_YOU, move: move, backwardMove: backwardMove});
+	_openAiKnockPrompt(move, backwardMove, forgottenMandatoryMoves) {
+		// forgottenMandatoryMoves is persisted (not recomputed on restore): it is
+		// computed here for the human player, but on restore the active player is
+		// DEALER, for whom recomputing would dereference a non-existent pile.
+		this.setPendingPrompt({
+			type: PROMPT_AI_KNOCKED_YOU,
+			move: move,
+			backwardMove: backwardMove,
+			forgottenMandatoryMoves: forgottenMandatoryMoves
+		});
 		GamePersistence.saveGame(this);
 	}
 
@@ -220,8 +228,7 @@ export class Game {
 			return false;
 		}
 		if (prompt.type === PROMPT_AI_KNOCKED_YOU) {
-			const forgottenMandatoryMoves = PlayboardUtils.getForgottenMandatoryMovesToHightlight(this);
-			RenderService.renderNotyAiKnocked(this, prompt.backwardMove, forgottenMandatoryMoves, prompt.move);
+			RenderService.renderNotyAiKnocked(this, prompt.backwardMove, prompt.forgottenMandatoryMoves || [], prompt.move);
 			return true;
 		}
 		if (prompt.type === PROMPT_KNOCK_JUSTIFIED) {
@@ -339,7 +346,7 @@ export class Game {
 				this.setActivePlayer(Player.DEALER);
 				const backwardMove = MoveUtils.createBackwardMove(intendedMove, true);
 				RenderService.renderPlayboard(this); // Render playboard before calling renderNotyAiKnocks to avoid optical "jumps" of the card which has to be moved backwards.
-				this._openAiKnockPrompt(intendedMove, backwardMove);
+				this._openAiKnockPrompt(intendedMove, backwardMove, forgottenMandatoryMoves);
 				RenderService.renderNotyAiKnocked(this, backwardMove, forgottenMandatoryMoves, intendedMove);
 			}
 			// No knocking, go on:
@@ -405,7 +412,7 @@ export class Game {
 		if (isMoveKnockableByArtificialIntelligence && !forgetToKnock) {
 			this.setActivePlayer(Player.DEALER);
 			const backwardMove = MoveUtils.createBackwardMove(intendedMove, true);
-			this._openAiKnockPrompt(intendedMove, backwardMove);
+			this._openAiKnockPrompt(intendedMove, backwardMove, forgottenMandatoryMoves);
 			RenderService.renderNotyAiKnocked(this, backwardMove, forgottenMandatoryMoves, intendedMove);
 		}
 		else {
@@ -453,7 +460,7 @@ export class Game {
 			backwardMove.setSourcePilePosition(PileUtils.getWastePilePositionOfPlayer(this.getIdentityPlayer()));
 			backwardMove.setTargetPilePosition(PileUtils.getWastePilePositionOfPlayer(this.getIdentityPlayer()));
 
-			this._openAiKnockPrompt(intendedMove, backwardMove);
+			this._openAiKnockPrompt(intendedMove, backwardMove, forgottenMandatoryMoves);
 			RenderService.renderNotyAiKnocked(this, backwardMove, forgottenMandatoryMoves, intendedMove);
 		}
 		else {

@@ -87,11 +87,14 @@ function serializePendingPrompt(prompt) {
 		return null;
 	}
 	// move = the triggering move (for highlighting); backwardMove = the revert
-	// applied when the prompt is dismissed (specially built for some knocks).
+	// applied when the prompt is dismissed (specially built for some knocks);
+	// forgottenMandatoryMoves = the moves to highlight (computed at knock time,
+	// not recomputable on restore when the active player is DEALER).
 	return {
 		type: prompt.type,
 		move: serializeMove(prompt.move),
-		backwardMove: serializeMove(prompt.backwardMove)
+		backwardMove: serializeMove(prompt.backwardMove),
+		forgottenMandatoryMoves: (prompt.forgottenMandatoryMoves || []).map(serializeMove)
 	};
 }
 
@@ -110,7 +113,8 @@ function deserializePendingPrompt(data) {
 	return {
 		type: data.type,
 		move: deserializeMove(data.move),
-		backwardMove: deserializeMove(data.backwardMove)
+		backwardMove: deserializeMove(data.backwardMove),
+		forgottenMandatoryMoves: (data.forgottenMandatoryMoves || []).map(deserializeMove)
 	};
 }
 
