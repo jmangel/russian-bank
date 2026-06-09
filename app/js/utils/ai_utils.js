@@ -1,6 +1,7 @@
 
 import * as PlayboardUtils from '../utils/playboard_utils';
 import * as PileUtils from '../utils/pile_utils';
+import * as Rng from '../utils/random';
 
 import { PileType } from '../enums/pileinformation/piletype';
 import { PilePosition } from '../enums/pileinformation/pileposition';
@@ -154,7 +155,7 @@ function getBestMoveOfChoice(playboard, priority1Moves, priority2Moves, priority
 function getRandomizedMoveOfChoice(playboard, levelOfDifficulty, priority1Moves, priority2Moves, priority3Moves) {
 
 	let moveOfChoice = null;
-	const randomNumber = Math.random();
+	const randomNumber = Rng.random();
 
 	if (priority1Moves.length > 0 && priority2Moves.length > 0 && priority3Moves.length > 0) {
 
@@ -210,7 +211,7 @@ function getRandomizedMoveOfChoice(playboard, levelOfDifficulty, priority1Moves,
 function getMoveOfChoiceWithinPriority1(playboard, levelOfDifficulty, priority1Moves, isRandomized) {
 	
 	let moveOfChoice = null;
-	const randomNumber = Math.random();
+	const randomNumber = Rng.random();
 
 	// Check if we can find a prio 1 move that is also a prio 2 move (target pile is waste pile of opponent):
 	let doublePrioMoveFound = false;
@@ -271,7 +272,7 @@ function getMoveOfChoiceWithinPriority2or3(playboard, levelOfDifficulty, priorit
 
 	let moveOfChoice = null;
 
-	const randomNumber = Math.random();
+	const randomNumber = Rng.random();
 
 	// Check if we can find a house pile as source pile with only one card left so that we can get a free slot:
 	let slotEmptyingMoveFound = false;

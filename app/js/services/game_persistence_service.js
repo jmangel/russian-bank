@@ -12,6 +12,7 @@ import {PilePosition} from "../enums/pileinformation/pileposition";
 
 import * as PlayerUtils from "../utils/player_utils";
 import * as LocalStorageService from "./localstorage_service";
+import * as Rng from "../utils/random";
 
 /**
  * Persists the in-progress game to localStorage so an accidental refresh (or a
@@ -24,10 +25,12 @@ import * as LocalStorageService from "./localstorage_service";
  * render (RenderService.renderPlayboardCards) so it is never stored.
  *
  * Save points (Option A+): clean human resting points (saveGameIfRestable, from
- * renderPlayboard) plus the AI-handoff boundary (an explicit saveGame the moment
- * a human move ends the turn). On restore, if it is the AI's turn we re-run the
- * AI fresh - its logic is stateless w.r.t. animation. Knock prompts are the one
- * accepted gap (transient noty UI): a refresh there rewinds to just before them.
+ * renderPlayboard), the AI-handoff boundary (an explicit saveGame the moment a
+ * human move ends the turn), and the knock prompts (an explicit saveGame when a
+ * prompt opens). On restore, if it is the AI's turn we re-run the AI - which is
+ * deterministic because its randomness is seeded (utils/random) and the seed is
+ * persisted, so the replay is identical (no reroll). If a knock prompt was open
+ * it is re-presented (see Game.rerenderPendingPrompt) so its penalty stands.
  *
  * A save that is unreadable, an incompatible schema, or references an unknown
  * enum is discarded so boot falls back to a fresh deal (see loadSavedGame and
@@ -35,7 +38,9 @@ import * as LocalStorageService from "./localstorage_service";
  */
 
 const STORAGE_KEY = "zpSavedGame";
-const SCHEMA_VERSION = 1;
+// v2 adds the deterministic-RNG state and the pending-knock-prompt descriptor.
+// A v1 save (which has neither) is discarded -> fresh deal.
+const SCHEMA_VERSION = 2;
 
 function nameOf(enumValue) {
 	return enumValue == null ? null : enumValue.name;
@@ -47,6 +52,58 @@ function enumValueOfOrThrow(EnumClass, name) {
 		throw new Error("Unknown enum value in saved game: " + name);
 	}
 	return value;
+}
+
+function serializeMove(move) {
+	if (!move) {
+		return null;
+	}
+	return {
+		player: nameOf(move.getPlayer()),
+		source: nameOf(move.getSourcePilePosition()),
+		target: nameOf(move.getTargetPilePosition())
+	};
+}
+
+function deserializeMove(data) {
+	if (!data) {
+		return null;
+	}
+	const move = new Move();
+	if (data.player != null) {
+		move.setPlayer(enumValueOfOrThrow(Player, data.player));
+	}
+	if (data.source != null) {
+		move.setSourcePilePosition(enumValueOfOrThrow(PilePosition, data.source));
+	}
+	if (data.target != null) {
+		move.setTargetPilePosition(enumValueOfOrThrow(PilePosition, data.target));
+	}
+	return move;
+}
+
+function serializePendingPrompt(prompt) {
+	if (!prompt) {
+		return null;
+	}
+	// move = the triggering move (for highlighting); backwardMove = the revert
+	// applied when the prompt is dismissed (specially built for some knocks).
+	return {
+		type: prompt.type,
+		move: serializeMove(prompt.move),
+		backwardMove: serializeMove(prompt.backwardMove)
+	};
+}
+
+function deserializePendingPrompt(data) {
+	if (!data) {
+		return null;
+	}
+	return {
+		type: data.type,
+		move: deserializeMove(data.move),
+		backwardMove: deserializeMove(data.backwardMove)
+	};
 }
 
 // --- serialization ------------------------------------------------------
@@ -93,8 +150,11 @@ function serializeGame(game) {
 		counterNumberOfWrongKnocks: game.getCounterNumberOfWrongKnocks(),
 		counterNumbersOfTurnsToMiss: game.getCounterNumbersOfTurnsToMiss(),
 		realPlayerMadeFirstMove: game.hasRealPlayerMadeFirstMove(),
-		// Only live during a knock prompt, which is never a save point. Persist null.
-		intendedMoveOfArtificialIntelligence: null,
+		// Needed to re-present a knock prompt on restore (see pendingPrompt).
+		intendedMoveOfArtificialIntelligence: serializeMove(game.getIntendedMoveOfArtificialIntelligence()),
+		pendingPrompt: serializePendingPrompt(game.getPendingPrompt()),
+		// Deterministic-RNG state so the AI replays identically on restore.
+		rngState: Rng.getState(),
 		showAcesOnCenterPilesSorted: game.getShowAcesOnCenterPilesSorted(),
 		isTutorialMode: game.isInTutorialMode()
 	};
@@ -176,7 +236,8 @@ export function loadSavedGame() {
 		|| !Array.isArray(data.playboard.piles)
 		|| !Array.isArray(data.playboard.moveHistory)
 		|| typeof data.scalars.identityPlayer !== "string"
-		|| typeof data.scalars.activePlayer !== "string") {
+		|| typeof data.scalars.activePlayer !== "string"
+		|| typeof data.scalars.rngState !== "number") {
 		clearSavedGame();
 		return null;
 	}
@@ -249,12 +310,16 @@ export function restoreInto(game, data) {
 	game.setKnockedState(s.isInKnockedState);
 	game.setIsExpectedToPlayReservePileCard(s.isExpectedToPlayReservePileCard);
 	game.setRealPlayerMadeFirstMove(s.realPlayerMadeFirstMove);
-	game.setIntendedMoveOfArtificialIntelligence(null);
+	game.setIntendedMoveOfArtificialIntelligence(deserializeMove(s.intendedMoveOfArtificialIntelligence));
+	game.setPendingPrompt(deserializePendingPrompt(s.pendingPrompt));
 	game.setShowAcesOnCenterPilesSorted(s.showAcesOnCenterPilesSorted);
 	game.setTutorialMode(s.isTutorialMode);
 	if (s.startTimeTs !== undefined) {
 		game.setStartTime(s.startTimeTs);
 	}
+
+	// Restore the deterministic-RNG state so a resumed AI turn replays identically.
+	Rng.setState(s.rngState);
 
 	// Statistics bookkeeping: a refresh resets pause tracking; game-started
 	// reflects whether the first move has already been made.
@@ -277,7 +342,15 @@ export function applyPostSetup(game, data) {
 
 	game.setLevelOfDifficulty(data.scalars.levelOfDifficulty);
 
-	// If the AI was to move when saved, resume its (re-randomized) turn.
+	// A knock prompt was open when saved: re-present it so its penalty stands
+	// (a refresh must not undo the knock or the mistake that triggered it).
+	if (game.getPendingPrompt()) {
+		game.rerenderPendingPrompt();
+		return;
+	}
+
+	// If the AI was to move when saved, resume its turn. The replay is identical
+	// because the RNG state was restored above.
 	const aiPlayer = PlayerUtils.getOpponentPlayer(game.getIdentityPlayer());
 	if (game.getActivePlayer() === aiPlayer && !game.isGameOver() && !game.isInKnockedState()) {
 		game.letArtificialIntelligencePlay();

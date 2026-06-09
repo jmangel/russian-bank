@@ -3,6 +3,7 @@ import * as PlayerUtils from '../utils/player_utils';
 import * as PileUtils from '../utils/pile_utils';
 import * as PlayboardUtils from '../utils/playboard_utils';
 import * as AiUtils from '../utils/ai_utils';
+import * as Rng from '../utils/random';
 
 import { PileType } from '../enums/pileinformation/piletype';
 import { CardNumber } from '../enums/cardinformation/cardnumber';
@@ -25,7 +26,7 @@ export function letArtificialIntelligencePlay(game) {
 
 	const artificialIntelligenceKnockedBefore = checkIfArtificialIntelligenceKnockedBefore(game);
 	const artificialIntelligenceWasKnockedByIdentityPlayerBefore = checkIfArtificialIntelligenceWasKnockedBefore(game);
-	const randomNumberCheckMandatoryMoves = Math.random();
+	const randomNumberCheckMandatoryMoves = Rng.random();
 
 	// If the AI has the possiblity to play an ACE as mandatory move the mandatory moves must be checked.
 	// (Otherwise the AI might overlook the mandatory move of an ace what is not very realistic.)
@@ -55,7 +56,7 @@ export function letArtificialIntelligencePlay(game) {
 
 		let moveOfChoice = null;
 		const emptyHousePileSlotsFound = PlayboardUtils.checkForEmptyHousePileSlots(game.getPlayboard());
-		const randomNumberCheckMoveOfChoice = Math.random();
+		const randomNumberCheckMoveOfChoice = Rng.random();
 
 		// If there are empty house pile slots right now the moves of choice must be checked.
 		// (Otherwise the AI might "overlook" that there is one or more free slot and that's not very realistic.)
